@@ -18,6 +18,7 @@
 #include "opencv2/highgui/highgui_c.h"
 #include "opencv2/imgproc/imgproc_c.h"
 #include "opencv2/core/version.hpp"
+#include <opencv2/opencv.hpp>
 
 using namespace nvuffparser;
 using namespace nvinfer1;
@@ -70,9 +71,9 @@ std::string locateFile(const std::string& input)
 
 
 // simple PGM (portable greyscale map) reader
-void readPGMFile(const std::string& filename,  uint8_t buffer[INPUT_H*INPUT_W])
+void readPGMFile(const std::string& filename,  uint8_t buffer[INPUT_H*INPUT_W*INPUT_C])
 {
-    readPGMFile(locateFile(filename), buffer, INPUT_H, INPUT_W);
+    readPGMFile(locateFile(filename), buffer, INPUT_H, INPUT_W, INPUT_C);
 }
 
 
@@ -108,8 +109,8 @@ calculateBindingBufferSizes(const ICudaEngine& engine, int nbBindings, int batch
 
 void* createMnistCudaBuffer(int64_t eltCount, DataType dtype, float *input)
 {
-    /* in that specific case, eltCount == INPUT_H * INPUT_W */
-    assert(eltCount == INPUT_H * INPUT_W);
+    /* in that specific case, eltCount == INPUT_H * INPUT_W * INPUT_C*/
+    assert(eltCount == INPUT_H * INPUT_W * INPUT_C);
     assert(elementSize(dtype) == sizeof(float));
 
     size_t memSize = eltCount * elementSize(dtype);
@@ -123,7 +124,7 @@ void* createMnistCudaBuffer(int64_t eltCount, DataType dtype, float *input)
 }
 
 
-void printOutput(int64_t eltCount, DataType dtype, void* buffer)
+int printOutput(int64_t eltCount, DataType dtype, void* buffer)
 {
     std::cout << eltCount << " eltCount" << std::endl;
     assert(elementSize(dtype) == sizeof(float));
@@ -148,6 +149,7 @@ void printOutput(int64_t eltCount, DataType dtype, void* buffer)
 
     std::cout << std::endl;
     delete[] outputs;
+    return maxIdx;
 }
 
 
@@ -180,6 +182,43 @@ ICudaEngine* loadModelAndCreateEngine(const char* uffFile, int maxBatchSize, IUf
     return engine;
 }
 
+void img_read(char* fileName, float *data)
+{
+	cv::Mat img = cv::imread(fileName,-1);
+    cv::resize(img,img,cv::Size(INPUT_W,INPUT_H));
+    //std::cout << img<< std::endl;
+	cv::Mat sample;
+  	cv::cvtColor(img, sample, CV_BGR2RGB);
+	cv::Mat sample_float;
+    sample.convertTo(sample_float, CV_32FC3);
+
+	cv::Mat sample_normalized;
+	//cv::subtract(sample_float, mean_, sample_normalized);
+	//std::cout << mean_<< std::endl;
+	sample_normalized = sample_float;
+	//std::cout << "-----------------------" << std::endl;
+	//std::cout << sample_normalized<< std::endl;, , 
+	//sample_normalized -= cv::Scalar(125.30692,122.95039,113.86539); 
+	sample_normalized -= cv::Scalar(128,128,128); 
+	//std::cout << sample_normalized<< std::endl;
+	sample_normalized *= 0.0078125;
+
+    //std::cout << "-------------------------------------"<< std::endl;
+    //std::cout << sample_normalized<< std::endl;
+
+	std::vector<cv::Mat> input_channels(INPUT_C);
+	cv::split(sample_normalized, input_channels);
+	//std::vector<float> result(INPUT_H*INPUT_W*INPUT_C);
+	//auto data = result.data();
+	//float data[INPUT_H*INPUT_W*INPUT_C];
+	int channelLength = INPUT_H*INPUT_W;
+	int offset = 0;
+	for (int i = 0; i < INPUT_C; ++i) {
+		memcpy(data+offset,input_channels[i].data,channelLength*sizeof(float));
+		offset += channelLength;
+	}
+    
+}
 
 void execute(ICudaEngine& engine)
 {
@@ -207,7 +246,6 @@ void execute(ICudaEngine& engine)
     auto bufferSizesInput = buffersSizes[bindingIdxInput];
 
     float total = 0, ms;
-    int iCorrectNum = 0;
 	#define MAX_LINE 1024
 	FILE *fpOpen=fopen("/media/andy/Data/DevWorkSpace/Projects/imageClassifier/data/test_abs.txt","r");
 	if(fpOpen==NULL)
@@ -219,6 +257,7 @@ void execute(ICudaEngine& engine)
 	fflush(stdout);
 	char strLine[MAX_LINE];
 	int numberRun =0;
+    int iCorrectNum = 0;
 	while(!feof(fpOpen))
 	{
 		fgets(strLine, MAX_LINE, fpOpen);
@@ -227,25 +266,50 @@ void execute(ICudaEngine& engine)
 		fflush(stdout);
 		IplImage* testImg = cvLoadImage(token);
 
-		// creat original image
-		IplImage *in_img = cvCreateImage(cvSize(128, 128), IPL_DEPTH_8U, 3);
-		// copy src to original image
-
-		cvResize(testImg, in_img, CV_INTER_LINEAR);
+        IplImage *cvtimg = cvCreateImage(cvSize(testImg->width, testImg->height), IPL_DEPTH_8U, 3);
+        cvCvtColor(testImg, cvtimg, CV_BGR2RGB);
+		
+        IplImage *in_img = cvCreateImage(cvSize(128, 128), IPL_DEPTH_8U, 3);
+		cvResize(cvtimg, in_img, CV_INTER_LINEAR);
 
 
 		int _size = in_img->width * in_img->height * in_img->nChannels * sizeof(float);
 		float* hostInput = (float*)malloc(_size);
 		float tfOutput[5];
-		int i, j, k, count=0;
-		// scale pixel and change HWC->CHW
-		for(k= 0; k < in_img->nChannels; ++k){
-			for(j = 0; j < in_img->height; ++j){
-				for(i = 0; i < in_img->width; ++i){
-					hostInput[count] = ((float)in_img->imageData[k*in_img->height + j*in_img->widthStep + i] - 128.0)/128.0;
-				}
-			}
-		}
+
+        img_read(token, hostInput);
+
+		// int i, j, c, count=0;
+		// // scale pixel and change HWC->CHW
+		// for(c; c < in_img->nChannels; ++c){
+		// 	for(j; j < in_img->height; ++j){
+		// 		for(i; i < in_img->width; ++i){
+		// 			hostInput[count] = (1.0 * ((unsigned char)(in_img->imageData[c*in_img->height + j*in_img->widthStep + i]) )- 128.0)/128.0;
+        //             count++;
+		// 		}
+		// 	}
+		// }
+
+        // // print
+        // for(int i=0;i<in_img->width * in_img->height * in_img->nChannels;i++){
+        //     if(i==0){
+        //         std::cout << hostInput[i];
+        //     }
+        //     else
+        //     {
+        //         if(i%10==0)
+        //         {
+        //             std::cout << "\n" << hostInput[i];
+        //         }
+        //         else
+        //         {
+        //             std::cout << ", " << hostInput[i];
+        //         }
+                
+        //     }
+        // }
+        // exit(-1);
+            
 
 		buffers[bindingIdxInput] = createMnistCudaBuffer(bufferSizesInput.first, bufferSizesInput.second, hostInput);
 
@@ -255,15 +319,17 @@ void execute(ICudaEngine& engine)
         ms = std::chrono::duration<float, std::milli>(t_end - t_start).count();
         total += ms;
 
+        int pre = 0;
         for (int bindingIdx = 0; bindingIdx < nbBindings; ++bindingIdx)
         {
             if (engine.bindingIsInput(bindingIdx))
                 continue;
 
             auto bufferSizesOutput = buffersSizes[bindingIdx];
-            printOutput(bufferSizesOutput.first, bufferSizesOutput.second, buffers[bindingIdx]);
+            pre = printOutput(bufferSizesOutput.first, bufferSizesOutput.second, buffers[bindingIdx]);
         }
         CHECK(cudaFree(buffers[bindingIdxInput]));
+
 
 		token = strtok(NULL, " ");
 		char* label = token;
@@ -272,8 +338,13 @@ void execute(ICudaEngine& engine)
 		}
 		token = strtok(NULL, " ");
 
+        if(pre==((int)(*label)-'0'))
+        {
+            iCorrectNum++;
+        }
 
 		// free(hostInput);
+        cvReleaseImage(&cvtimg);
 		cvReleaseImage(&testImg);
 		cvReleaseImage(&in_img);
 		numberRun++;

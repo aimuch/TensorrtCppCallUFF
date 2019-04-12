@@ -22,12 +22,12 @@ std::string locateFile(const std::string& input, const std::vector<std::string> 
     return file;
 }
 
-void readPGMFile(const std::string& fileName,  uint8_t *buffer, int inH, int inW)
+void readPGMFile(const std::string& fileName,  uint8_t *buffer, int inH, int inW, int inC)
 {
 	std::ifstream infile(fileName, std::ifstream::binary);
     assert(infile.is_open() && "Attempting to read from a file that is not open.");
-	std::string magic, h, w, max;
-	infile >> magic >> h >> w >> max;
+	std::string magic, h, w, c, max;
+	infile >> magic >> h >> w >> c >> max;
 	infile.seekg(1, infile.cur);
-	infile.read(reinterpret_cast<char*>(buffer), inH*inW);
+	infile.read(reinterpret_cast<char*>(buffer), inH*inW*inC);
 }
