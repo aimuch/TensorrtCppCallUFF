@@ -184,11 +184,11 @@ ICudaEngine* loadModelAndCreateEngine(const char* uffFile, int maxBatchSize, IUf
 
 void img_read(char* fileName, float *data)
 {
-	cv::Mat img = cv::imread(fileName,-1);
-    cv::resize(img,img,cv::Size(INPUT_W,INPUT_H));
+	cv::Mat img = cv::imread(fileName, -1);
+    cv::resize(img, img, cv::Size(INPUT_W, INPUT_H));
     //std::cout << img<< std::endl;
 	cv::Mat sample;
-  	cv::cvtColor(img, sample, CV_BGR2RGB);
+    cv::cvtColor(img, sample, CV_BGR2RGB);
 	cv::Mat sample_float;
     sample.convertTo(sample_float, CV_32FC3);
 
@@ -199,7 +199,7 @@ void img_read(char* fileName, float *data)
 	//std::cout << "-----------------------" << std::endl;
 	//std::cout << sample_normalized<< std::endl;, , 
 	//sample_normalized -= cv::Scalar(125.30692,122.95039,113.86539); 
-	sample_normalized -= cv::Scalar(128,128,128); 
+	sample_normalized -= cv::Scalar(128, 128, 128); 
 	//std::cout << sample_normalized<< std::endl;
 	sample_normalized *= 0.0078125;
 
@@ -214,10 +214,9 @@ void img_read(char* fileName, float *data)
 	int channelLength = INPUT_H*INPUT_W;
 	int offset = 0;
 	for (int i = 0; i < INPUT_C; ++i) {
-		memcpy(data+offset,input_channels[i].data,channelLength*sizeof(float));
+		memcpy(data+offset, input_channels[i].data, channelLength*sizeof(float));
 		offset += channelLength;
 	}
-    
 }
 
 void execute(ICudaEngine& engine)
@@ -277,13 +276,17 @@ void execute(ICudaEngine& engine)
 		float* hostInput = (float*)malloc(_size);
 		float tfOutput[5];
 
+        
+        // >>>>>>>> OpenCV 3
         img_read(token, hostInput);
+        // <<<<<<<< OpenCV 3
 
+        // >>>>>>>>  OpenCV 2
 		// int i, j, c, count=0;
 		// // scale pixel and change HWC->CHW
-		// for(c; c < in_img->nChannels; ++c){
-		// 	for(j; j < in_img->height; ++j){
-		// 		for(i; i < in_img->width; ++i){
+		// for(c; c < in_img->nChannels; c++){
+		// 	for(j; j < in_img->height; j++){
+		// 		for(i; i < in_img->width; i++){
 		// 			hostInput[count] = (1.0 * ((unsigned char)(in_img->imageData[c*in_img->height + j*in_img->widthStep + i]) )- 128.0)/128.0;
         //             count++;
 		// 		}
@@ -305,11 +308,13 @@ void execute(ICudaEngine& engine)
         //         {
         //             std::cout << ", " << hostInput[i];
         //         }
-                
+
         //     }
         // }
         // exit(-1);
-            
+
+        // <<<<<<<< OpenCV 2
+
 
 		buffers[bindingIdxInput] = createMnistCudaBuffer(bufferSizesInput.first, bufferSizesInput.second, hostInput);
 
